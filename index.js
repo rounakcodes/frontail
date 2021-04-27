@@ -41,6 +41,8 @@ const filesNamespace = crypto.createHash('md5').update(files).digest('hex');
 const urlPath = program.urlPath.replace(/\/$/, ''); // remove trailing slash
 
 if (program.daemonize) {
+  // __filename is nodejs global variable to get current file name
+  // program has all the user passed args
   daemonize(__filename, program, {
     doAuthorization,
     doSecure,
@@ -126,10 +128,18 @@ if (program.daemonize) {
    * When connected send starting data
    */
   const tailer = tail(program.args, {
+    // number is the number of starting lines
+    // later, the number is not required when stream starts
     buffer: program.number,
   });
 
+  // filesSocket is a socket just for one namespace
+  // A Namespace is a communication channel that allows you to split the logic of your application over a single shared connection (also called “multiplexing”).
+  // https://socket.io/docs/v3/namespaces/index.html
+  // *of* handles namespacing
+  // io is attached the default localhost server
   const filesSocket = io.of(`/${filesNamespace}`).on('connection', (socket) => {
+    // emit the option *lines*: number of lines to be stored on browser
     socket.emit('options:lines', program.lines);
 
     if (program.uiHideTopbar) {
@@ -144,6 +154,8 @@ if (program.daemonize) {
       socket.emit('options:highlightConfig', highlightConfig);
     }
 
+    // emits the actual line from buffer using the file socket
+    // the buffer in tail is already configured to hold only 10 or such number of specified lines
     tailer.getBuffer().forEach((line) => {
       socket.emit('line', line);
     });
@@ -152,6 +164,20 @@ if (program.daemonize) {
   /**
    * Send incoming data
    */
+  /*
+  All objects that emit events are instances of the EventEmitter class.
+  These objects expose an eventEmitter.on() function
+    that allows one or more functions to be attached to named events emitted by the object.
+  Typically, event names are camel-cased strings but any valid JavaScript property key can be used.
+  */
+  // tailer in an instance of EventEmitter
+  // tailer uses *on* to attach listeners (i.e. callbacks) for *line* event
+  // when *line* event is emitted by 'tail.js', the listener is triggered
+  // the listener uses filesSocket to emit *line* event in the below case
+  // emits from filesSocket seem to be listened to by the browser
+  // *io* establishes a perpetual connection between the client and the server
+  // hence, the emits from server are received by the client
+  // https://stackoverflow.com/questions/48332454/how-does-socket-io-on-the-client-listen-to-events-emitted-from-server
   tailer.on('line', (line) => {
     filesSocket.emit('line', line);
   });
